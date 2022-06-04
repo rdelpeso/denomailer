@@ -186,7 +186,7 @@ export class SMTPClient {
       const dec = new TextDecoder();
 
       config.attachments.map((v) => {
-        if (v.encoding === "text") return v.content;
+        if (v.encoding === "text" || v.encoding === "base64") return v.content;
 
         const arr = new Uint8Array(v.content);
 
@@ -253,17 +253,27 @@ export class SMTPClient {
 
         await this.#connection.writeCmd(`--${attachmentBoundary}`);
         await this.#connection.writeCmd(
-          "Content-Type:",
-          attachment.contentType + ";",
-          "name=" + attachment.filename,
+          `Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
         );
 
         await this.#connection.writeCmd(
-          "Content-Disposition: attachment; filename=" + attachment.filename,
-          "\r\n",
+          `Content-Disposition: attachment; filename="${attachment.filename}"`,
         );
 
-        if (attachment.encoding === "binary") {
+        await this.#connection.writeCmd(
+          `X-Attachment-Id: attachment_id_${i}`,
+        );
+        await this.#connection.writeCmd(
+          `Content-ID: <attachment_id_${i}>`,
+        );
+
+        if (attachment.encoding === "base64") {
+          await this.#connection.writeCmd(
+            "Content-Transfer-Encoding: base64",
+          );
+
+          await this.#connection.writeCmd(attachment.content);
+        } else if (attachment.encoding === "binary") {
           await this.#connection.writeCmd("Content-Transfer-Encoding: binary");
 
           if (
