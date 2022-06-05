@@ -123,21 +123,37 @@ export class SMTPClient {
         CommandCode.BEGIN_DATA,
       );
 
-      await this.#connection.writeCmd("Subject: ", config.subject);
-      await this.#connection.writeCmd(
-        "From: ",
-        `${config.from.name} <${config.from.mail}>`,
+      let boundaryAddition = 100;
+      // calc msg boundary
+      // TODO: replace this with a match or so.
+      config.mimeContent.map((v) => v.content).join("\n").replace(
+        new RegExp("--message([0-9]+)", "g"),
+        (_, numb) => {
+          boundaryAddition += parseInt(numb, 10);
+
+          return "";
+        },
       );
+
+      const messageBoundary = `message${boundaryAddition}`;
+
+      await this.#connection.writeCmd(
+        `Content-Type: multipart/related; type="text/html";\r\n boundary="${messageBoundary}"`,
+      );
+
+      await this.#connection.writeCmd(`Subject: ${config.subject}`);
+      await this.#connection.writeCmd(
+        `From: ${config.from.name} <${config.from.mail}>`,
+      );
+
       if (config.to.length > 0) {
         await this.#connection.writeCmd(
-          "To: ",
-          config.to.map((m) => `${m.name} <${m.mail}>`).join(";"),
+          `To: ${config.to.map((m) => `${m.name} <${m.mail}>`).join(";")}`,
         );
       }
       if (config.cc.length > 0) {
         await this.#connection.writeCmd(
-          "Cc: ",
-          config.cc.map((m) => `${m.name} <${m.mail}>`).join(";"),
+          `Cc: ${config.cc.map((m) => `${m.name} <${m.mail}>`).join(";")}`,
         );
       }
 
@@ -202,30 +218,11 @@ export class SMTPClient {
 
       const attachmentBoundary = `attachment${boundaryAdditionAtt}`;
 
-      await this.#connection.writeCmd(
-        `Content-Type: multipart/mixed; boundary=${attachmentBoundary}`,
-        "\r\n",
-      );
-      await this.#connection.writeCmd(`--${attachmentBoundary}`);
-
-      let boundaryAddition = 100;
-      // calc msg boundary
-      // TODO: replace this with a match or so.
-      config.mimeContent.map((v) => v.content).join("\n").replace(
-        new RegExp("--message([0-9]+)", "g"),
-        (_, numb) => {
-          boundaryAddition += parseInt(numb, 10);
-
-          return "";
-        },
-      );
-
-      const messageBoundary = `message${boundaryAddition}`;
-
-      await this.#connection.writeCmd(
-        `Content-Type: multipart/alternative; boundary=${messageBoundary}`,
-        "\r\n",
-      );
+      // await this.#connection.writeCmd(
+      //   `Content-Type: multipart/mixed; boundary=${attachmentBoundary}`,
+      //   "\r\n",
+      // );
+      // await this.#connection.writeCmd(`--${attachmentBoundary}`);
 
       for (let i = 0; i < config.mimeContent.length; i++) {
         await this.#connection.writeCmd(`--${messageBoundary}`);
@@ -243,26 +240,19 @@ export class SMTPClient {
           await this.#connection.writeCmd("");
         }
 
-        await this.#connection.writeCmd(config.mimeContent[i].content, "\r\n");
+        await this.#connection.writeCmd(config.mimeContent[i].content);
       }
 
-      await this.#connection.writeCmd(`--${messageBoundary}--\r\n`);
+      await this.#connection.writeCmd(`--${messageBoundary}`);
 
       for (let i = 0; i < config.attachments.length; i++) {
         const attachment = config.attachments[i];
 
-        await this.#connection.writeCmd(`--${attachmentBoundary}`);
+        // await this.#connection.writeCmd(`--${attachmentBoundary}`);
         await this.#connection.writeCmd(
-          `Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
+          `Content-Type: ${attachment.contentType}; name=${attachment.filename}`,
         );
 
-        await this.#connection.writeCmd(
-          `Content-Disposition: attachment; filename="${attachment.filename}"`,
-        );
-
-        await this.#connection.writeCmd(
-          `X-Attachment-Id: attachment_id_${i}`,
-        );
         await this.#connection.writeCmd(
           `Content-ID: <attachment_id_${i}>`,
         );
@@ -272,7 +262,13 @@ export class SMTPClient {
             "Content-Transfer-Encoding: base64",
           );
 
-          await this.#connection.writeCmd(attachment.content);
+          await this.#connection.writeCmd(
+            `Content-Disposition: attachment; filename=${attachment.filename}\r\n`,
+          );
+  
+          for (let i = 0; i < attachment.content.length; i = i + 76) {
+            await this.#connection.writeCmd(attachment.content.slice(i, i + 76));
+          }
         } else if (attachment.encoding === "binary") {
           await this.#connection.writeCmd("Content-Transfer-Encoding: binary");
 
@@ -286,8 +282,6 @@ export class SMTPClient {
           } else {
             await this.#connection.writeCmdBinary(attachment.content);
           }
-
-          await this.#connection.writeCmd("\r\n");
         } else if (attachment.encoding === "text") {
           await this.#connection.writeCmd(
             "Content-Transfer-Encoding: quoted-printable",
@@ -297,7 +291,8 @@ export class SMTPClient {
         }
       }
 
-      await this.#connection.writeCmd(`--${attachmentBoundary}--\r\n`);
+      await this.#connection.writeCmd(`--${messageBoundary}\r\n`);
+      // await this.#connection.writeCmd(`--${attachmentBoundary}--\r\n`);
 
       await this.#connection.writeCmd(".\r\n");
 

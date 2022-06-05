@@ -26,7 +26,7 @@ export function resolveContent({
 
   if (text) {
     newContent.push({
-      mimeType: 'text/plain; charset="utf-8"',
+      mimeType: 'text/plain; charset=utf-8',
       content: quotedPrintableEncode(text),
       transferEncoding: "quoted-printable",
     });
@@ -34,7 +34,7 @@ export function resolveContent({
 
   if (html) {
     newContent.push({
-      mimeType: 'text/html; charset="utf-8"',
+      mimeType: 'text/html; charset=utf-8',
       content: quotedPrintableEncode(html),
       transferEncoding: "quoted-printable",
     });
